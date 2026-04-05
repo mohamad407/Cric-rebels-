@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cric Rebels</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Socket.io -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --ground-dark: #0c1f12;
+            --ground-mid: #163820;
+            --accent: #00e676;
+            --accent-dark: #00c853;
+            --danger: #ff5252;
+            --ball-red: #d32f2f;
+        }
+        body { font-family: 'Inter', sans-serif; background-color: var(--ground-dark); color: white; }
+        .font-display { font-family: 'Oswald', sans-serif; }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #0c1f12; }
+        ::-webkit-scrollbar-thumb { background: #00e676; border-radius: 2px; }
+
+        /* Transitions */
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
+        
+        .slide-enter-active, .slide-leave-active { transition: transform 0.3s ease; }
+        .slide-enter-from, .slide-leave-to { transform: translateX(100%); }
+
+        /* Button Effects */
+        .score-btn {
+            transition: all 0.1s ease;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .score-btn:active { transform: scale(0.95); box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+
+        /* Score Animation */
+        @keyframes pulse-green {
+            0% { box-shadow: 0 0 0 0 rgba(0, 230, 118, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(0, 230, 118, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(0, 230, 118, 0); }
+        }
+        .animate-score { animation: pulse-green 0.5s; }
+        
+        /* Celebration */
+        .celebration-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center;
+            z-index: 999; pointer-events: none; opacity: 0; transition: opacity 0.2s;
+        }
+        .celebration-overlay.show { opacity: 1; }
+        .celebration-text { font-size: 8rem; font-family: 'Oswald', sans-serif; text-shadow: 0 0 20px rgba(255,255,255,0.5); }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <div id="app">
+        <!-- Celebration Overlay -->
+        <div class="celebration-overlay" :class="{ 'show': celebration.show }">
+            <div class="celebration-text" :class="celebration.class">{{ celebration.text }}</div>
+        </div>
+
+        <!-- Auth View -->
+        <transition name="fade">
+            <div v-if="view === 'auth'" class="min-h-screen flex items-center justify-center p-4">
+                <div class="w-full max-w-md bg-[#163820]/50 backdrop-blur-md rounded-xl p-8 shadow-2xl border border-white/10">
+                    <h1 class="text-center text-4xl font-display text-[#00e676] mb-2 tracking-wider">CRIC REBELS</h1>
+                    <p class="text-center text-sm text-gray-400 mb-8">Live Scoring Platform</p>
+                    
+                    <div class="flex mb-6 border-b border-white/10">
+                        <button @click="authTab='login'" :class="{'border-b-2 border-[#00e676] text-white': authTab==='login'}" class="flex-1 pb-2 text-gray-500 focus:outline-none">LOGIN</button>
+                        <button @click="authTab='signup'" :class="{'border-b-2 border-[#00e676] text-white': authTab==='signup'}" class="flex-1 pb-2 text-gray-500 focus:outline-none">SIGN UP</button>
+                    </div>
+
+                    <!-- Login Form -->
+                    <form v-if="authTab==='login'" @submit.prevent="handleLogin" class="space-y-4">
+                        <input v-model="login.email" type="email" placeholder="Email" class="w-full bg-black/20 border border-white/10 rounded px-4 py-3 focus:outline-none focus:border-[#00e676]" required>
+                        <input v-model="login.password" type="password" placeholder="Password" class="w-full bg-black/20 border border-white/10 rounded px-4 py-3 focus:outline-none focus:border-[#00e676]" required>
+                        <button type="submit" class="w-full bg-[#00e676] text-black font-bold py-3 rounded hover:bg-[#00c853] transition">LOGIN</button>
+                    </form>
+
+                    <!-- Signup Form -->
+                    <form v-else @submit.prevent="handleSignup" class="space-y-4">
+                        <input v-model="signup.name" type="text" placeholder="Full Name" class="w-full bg-black/20 border border-white/10 rounded px-4 py-3 focus:outline-none focus:border-[#00e676]" required>
+                        <input v-model="signup.email" type="email" placeholder="Email" class="w-full bg-black/20 border border-white/10 rounded px-4 py-3 focus:outline-none focus:border-[#00e676]" required>
+                        <input v-model="signup.password" type="password" placeholder="Password" class="w-full bg-black/20 border border-white/10 rounded px-4 py-3 focus:outline-none focus:border-[#00e676]" required>
+                        <button type="submit" class="w-full bg-[#00e676] text-black font-bold py-3 rounded hover:bg-[#00c853] transition">CREATE ACCOUNT</button>
+                    </form>
+                </div>
+            </div>
+        </transition>
+
+        <!-- Home View -->
+        <transition name="fade">
+            <div v-if="view === 'home'" class="min-h-screen p-4">
+                <header class="flex justify-between items-center mb-8 max-w-4xl mx-auto">
+                    <h1 class="font-display text-2xl text-[#00e676]">CRIC REBELS</h1>
+                    <div class="flex gap-2 items-center">
+                        <span class="text-sm text-gray-400 hidden sm:block">Hi, {{ user.name }}</span>
+                        <button @click="logout" class="text-xs bg-white/10 px-3 py-1 rounded hover:bg-white/20">Logout</button>
+                    </div>
+                </header>
+
+                <div class="max-w-4xl mx-auto flex flex-col sm:flex-row gap-4 justify-center mt-20">
+                    <button @click="view = 'create'" class="bg-[#163820] hover:bg-[#1f4d2a] p-8 rounded-xl text-center transition border border-white/5 hover:scale-105 transform">
+                        <span class="block text-6xl mb-2">+</span>
+                        <span class="font-display text-2xl tracking-wide">CREATE MATCH</span>
+                        <span class="block text-xs text-gray-500 mt-2">Setup a new game</span>
+                    </button>
+                    <button @click="view = 'join'" class="bg-[#163820] hover:bg-[#1f4d2a] p-8 rounded-xl text-center transition border border-white/5 hover:scale-105 transform">
+                        <span class="block text-6xl mb-2">👁</span>
+                        <span class="font-display text-2xl tracking-wide">WATCH MATCH</span>
+                        <span class="block text-xs text-gray-500 mt-2">Enter match code</span>
+                    </button>
+                </div>
+            </div>
+        </transition>
+
+        <!-- Create Match View -->
+        <transition name="slide">
+            <div v-if="view === 'create'" class="min-h-screen bg-[#0c1f12] p-4">
+                <header class="flex items-center gap-2 mb-6">
+                    <button @click="view = 'home'" class="text-xl px-2">&larr;</button>
+                    <h2 class="font-display text-xl">NEW MATCH SETUP</h2>
+                </header>
+
+                <div class="max-w-lg mx-auto space-y-6">
+                    <div class="bg-white/5 rounded-xl p-4 border border-white/10">
+                        <label class="text-xs text-gray-400">Match Name</label>
+                        <input v-model="newMatch.name" type="text" placeholder="Sunday Final" class="w-full bg-transparent border-b border-white/20 focus:border-[#00e676] outline-none py-1 text-lg">
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="bg-white/5 rounded-xl p-4 border border-white/10">
+                            <label class="text-xs text-gray-400">Team A</label>
+                            <input v-model="newMatch.teamA.name" type="text" placeholder="Team Alpha" class="w-full bg-transparent border-b border-white/20 focus:border-[#00e676] outline-none py-1">
+                        </div>
+                        <div class="bg-white/5 rounded-xl p-4 border border-white/10">
+                            <label class="text-xs text-gray-400">Team B</label>
+                            <input v-model="newMatch.teamB.name" type="text" placeholder="Team Beta" class="w-full bg-transparent border-b border-white/20 focus:border-[#00e676] outline-none py-1">
+                        </div>
+                    </div>
+
+                    <div class="bg-white/5 rounded-xl p-4 border border-white/10">
+                        <label class="text-xs text-gray-400">Total Overs (Max 90)</label>
+                        <input v-model.number="newMatch.overs" type="number" max="90" class="w-full bg-transparent border-b border-white/20 focus:border-[#00e676] outline-none py-1 text-lg">
+                    </div>
+
+                    <!-- Players Input -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="bg-white/5 rounded-xl p-4 border border-white/10">
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="text-xs text-gray-400">Team A Players ({{newMatch.teamA.players.length}})</label>
+                                <button type="button" @click="addPlayer('teamA')" class="text-[#00e676] text-xs border border-[#00e676]/50 px-2 rounded hover:bg-[#00e676]/10">+ Add</button>
+                            </div>
+                            <div class="space-y-2 max-h-40 overflow-y-auto">
+                                <input v-for="(p, i) in newMatch.teamA.players" :key="'a'+i" v-model="newMatch.teamA.players[i]" placeholder="Player Name" class="w-full bg-black/20 text-sm rounded px-2 py-1 focus:outline-none focus:ring-1 ring-[#00e676]">
+                            </div>
+                        </div>
+                        <div class="bg-white/5 rounded-xl p-4 border border-white/10">
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="text-xs text-gray-400">Team B Players ({{newMatch.teamB.players.length}})</label>
+                                <button type="button" @click="addPlayer('teamB')" class="text-[#00e676] text-xs border border-[#00e676]/50 px-2 rounded hover:bg-[#00e676]/10">+ Add</button>
+                            </div>
+                            <div class="space-y-2 max-h-40 overflow-y-auto">
+                                <input v-for="(p, i) in newMatch.teamB.players" :key="'b'+i" v-model="newMatch.teamB.players[i]" placeholder="Player Name" class="w-full bg-black/20 text-sm rounded px-2 py-1 focus:outline-none focus:ring-1 ring-[#00e676]">
+                            </div>
+                        </div>
+                    </div>
+
+                    <button @click="createMatch" class="w-full bg-[#00e676] text-black font-bold py-4 rounded-lg shadow-lg hover:bg-[#00c853]">
+                        CREATE MATCH
+                    </button>
+                </div>
+            </div>
+        </transition>
+
+        <!-- Match Code Display -->
+        <transition name="fade">
+            <div v-if="view === 'code'" class="min-h-screen flex flex-col items-center justify-center text-center p-4">
+                <h2 class="text-xl text-gray-400 mb-2">Match Created Successfully</h2>
+                <p class="text-sm text-gray-500 mb-4">Share this code with viewers</p>
+                <div class="bg-[#163820] px-8 py-6 rounded-xl border border-dashed border-[#00e676] mb-8">
+                    <span class="font-display text-5xl tracking-widest text-[#00e676]">{{ match.code }}</span>
+                </div>
+                <button @click="startScoring" class="bg-white text-black font-bold py-3 px-8 rounded-full shadow-xl">
+                    Start Scoring
+                </button>
+            </div>
+        </transition>
+
+        <!-- Join Match View -->
+        <transition name="fade">
+            <div v-if="view === 'join'" class="min-h-screen flex flex-col items-center justify-center p-4">
+                <button @click="view = 'home'" class="absolute top-4 left-4 text-xl">&larr;</button>
+                <h2 class="font-display text-2xl mb-4">Enter Match Code</h2>
+                <input v-model="joinCode" type="text" maxlength="6" class="w-48 text-center text-3xl font-display bg-black/20 border-b-2 border-[#00e676] outline-none py-2 tracking-widest uppercase" placeholder="XXXXXX">
+                <button @click="joinMatch" class="mt-6 bg-[#00e676] text-black font-bold py-2 px-6 rounded">JOIN</button>
+            </div>
+        </transition>
+
+        <!-- Scoreboard View -->
+        <transition name="fade">
+            <div v-if="view === 'scoreboard'" class="min-h-screen flex flex-col bg-[#0c1f12]">
+                <!-- Header -->
+                <header class="bg-black/20 p-3 flex justify-between items-center border-b border-white/10 sticky top-0 z-50 backdrop-blur-sm">
+                    <div class="flex items-center gap-2">
+                        <button @click="exitMatch" class="text-lg opacity-50 hover:opacity-100">&larr;</button>
+                        <div>
+                            <h1 class="font-display text-sm text-[#00e676]">{{ match.name }}</h1>
+                            <p class="text-xs text-gray-400">{{ match.teamA.name }} vs {{ match.teamB.name }}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded border border-red-500/30">LIVE</span>
+                        <span class="font-mono text-sm bg-black/30 px-2 py-1 rounded">{{ match.code }}</span>
+                    </div>
+                </header>
+
+                <!-- Scorecard -->
+                <div class="flex-1 overflow-y-auto p-4 space-y-4">
+                    
+                    <!-- Main Score -->
+                    <div class="bg-gradient-to-br from-[#163820] to-[#0c1f12] rounded-xl p-4 shadow-xl border border-white/5">
+                        <div class="flex justify-between items-end mb-4">
+                            <div>
+                                <span class="text-xs text-gray-400 uppercase">Batting</span>
+                                <h2 class="font-display text-xl">{{ currentInningsData.battingTeamName }}</h2>
+                            </div>
+                            <div class="text-right">
+                                <div class="flex items-baseline gap-1">
+                                    <span class="font-display text-5xl text-[#00e676]">{{ match.liveData.runs }}</span>
+                                    <span class="text-2xl text-gray-400">/ {{ match.liveData.wickets }}</span>
+                                </div>
+                                <span class="text-xs text-gray-400">Overs: {{ match.liveData.overs.toFixed(1) }} / {{ match.totalOvers }}</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Stats Grid -->
+                        <div class="grid grid-cols-3 gap-2 mt-2">
+                            <div class="bg-black/20 rounded p-2 text-center">
+                                <span class="block text-xs text-gray-500">Run Rate</span>
+                                <span class="font-bold text-[#00e676]">{{ match.liveData.runRate }}</span>
+                            </div>
+                            <div class="bg-black/20 rounded p-2 text-center">
+                                <span class="block text-xs text-gray-500">Target</span>
+                                <span class="font-bold">{{ match.liveData.target || '-' }}</span>
+                            </div>
+                            <div class="bg-black/20 rounded p-2 text-center">
+                                <span class="block text-xs text-gray-500">Last 5 Overs</span>
+                                <span class="font-bold">{{ match.liveData.lastFive || '-' }}</span>
+                            </div>
+                        </div>
+                        
+                        <!-- This Over -->
+                        <div class="mt-3 flex gap-1 items-center overflow-x-auto pb-1">
+                            <span class="text-[10px] text-gray-500 mr-1">This Over:</span>
+                            <span v-for="(b, i) in match.liveData.thisOver" :key="i" 
+                                  class="h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold"
+                                  :class="{
+                                      'bg-[#00e676] text-black': b > 0 && b < 4,
+                                      'bg-yellow-400 text-black': b == 4,
+                                      'bg-purple-500': b == 6,
+                                      'bg-red-500': b == 'W',
+                                      'bg-blue-400': b == 'WD' || b == 'NB',
+                                      'text-white': b == 0 || b == 'W' || b == 6
+                                  }">
+                                {{ b }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Batsman & Bowler Grid -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- Batsmen -->
+                        <div class="bg-white/5 rounded-xl p-3 border border-white/10">
+                            <h3 class="text-xs text-gray-400 mb-2 border-b border-white/5 pb-1">BATSMEN</h3>
+                            
+                            <div v-if="match.liveData.striker" class="grid grid-cols-6 gap-1 text-center items-center mb-1 py-1 border-l-2 border-[#00e676] pl-2 bg-[#00e676]/5">
+                                <span class="col-span-2 text-left text-sm font-bold truncate">{{ match.liveData.striker.name }}*</span>
+                                <span class="font-display text-lg">{{ match.liveData.striker.runs }}</span>
+                                <span class="text-xs text-gray-400">({{ match.liveData.striker.balls }})</span>
+                                <span class="text-xs text-gray-400">4s:{{ match.liveData.striker.fours }}</span>
+                                <span class="text-xs text-gray-400">6s:{{ match.liveData.striker.sixes }}</span>
+                            </div>
+                            
+                            <div v-if="match.liveData.nonStriker" class="grid grid-cols-6 gap-1 text-center items-center py-1 pl-2 opacity-60">
+                                <span class="col-span-2 text-left text-sm truncate">{{ match.liveData.nonStriker.name }}</span>
+                                <span class="font-display">{{ match.liveData.nonStriker.runs }}</span>
+                                <span class="text-xs text-gray-400">({{ match.liveData.nonStriker.balls }})</span>
+                                <span class="text-xs text-gray-400">4s:{{ match.liveData.nonStriker.fours }}</span>
+                                <span class="text-xs text-gray-400">6s:{{ match.liveData.nonStriker.sixes }}</span>
+                            </div>
+                        </div>
+
+                        <!-- Bowler -->
+                        <div class="bg-white/5 rounded-xl p-3 border border-white/10">
+                            <h3 class="text-xs text-gray-400 mb-2 border-b border-white/5 pb-1">BOWLER</h3>
+                            <div v-if="match.liveData.bowler" class="flex justify-between items-center">
+                                <span class="font-bold text-sm">{{ match.liveData.bowler.name }}</span>
+                                <div class="flex gap-3 text-right">
+                                    <span class="text-xs text-gray-400">O: <span class="text-white">{{ match.liveData.bowler.overs.toFixed(1) }}</span></span>
+                                    <span class="text-xs text-gray-400">R: <span class="text-white">{{ match.liveData.bowler.runs }}</span></span>
+                                    <span class="text-xs text-gray-400">W: <span class="text-[#00e676]">{{ match.liveData.bowler.wickets }}</span></span>
+                                    <span class="text-xs text-gray-400">Econ: <span class="text-white">{{ match.liveData.bowler.econ }}</span></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Scoring Controls (Creator Only) -->
+                <div v-if="isCreator && !match.ended" class="bg-black/50 backdrop-blur-lg border-t border-white/10 p-4 sticky bottom-0">
+                    <div class="max-w-lg mx-auto">
+                        <!-- Runs -->
+                        <div class="flex justify-between gap-2 mb-3">
+                            <button v-for="r in [0,1,2,3,4,6]" :key="r" 
+                                    @click="addScore('run', r)" 
+                                    class="score-btn flex-1 py-3 rounded-lg font-display text-xl bg-[#163820] hover:bg-[#1f4d2a] border border-white/10 text-[#00e676]">
+                                {{ r }}
+                            </button>
+                        </div>
+                        
+                        <!-- Extras & Wickets -->
+                        <div class="flex justify-between gap-2">
+                            <button @click="addScore('wide')" class="score-btn flex-1 py-2 rounded-lg bg-blue-500/20 border border-blue-500/50 text-blue-400 hover:bg-blue-500/30 text-sm">WIDE</button>
+                            <button @click="addScore('noBall')" class="score-btn flex-1 py-2 rounded-lg bg-blue-500/20 border border-blue-500/50 text-blue-400 hover:bg-blue-500/30 text-sm">NO BALL</button>
+                            <button @click="showWicketModal = true" class="score-btn flex-1 py-2 rounded-lg bg-red-500/20 border border-red-500/50 text-red-500 hover:bg-red-500/30 text-sm font-bold">WICKET</button>
+                            <button @click="addScore('undo')" class="score-btn flex-1 py-2 rounded-lg bg-white/5 border border-white/10 text-gray-400 hover:bg-white/10 text-sm">UNDO</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Match Ended -->
+                <div v-if="match.ended" class="p-4 bg-black/50 text-center border-t border-[#00e676]">
+                    <h3 class="font-display text-xl text-[#00e676]">MATCH CONCLUDED</h3>
+                    <p class="text-sm text-gray-400">{{ match.resultText || 'Match Over' }}</p>
+                </div>
+            </div>
+        </transition>
+
+        <!-- Wicket Modal -->
+        <transition name="fade">
+            <div v-if="showWicketModal" class="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
+                <div class="bg-[#163820] w-full max-w-sm rounded-xl p-6 border border-white/10 relative">
+                    <button @click="showWicketModal = false" class="absolute top-2 right-4 text-gray-500 hover:text-white text-xl">&times;</button>
+                    <h3 class="font-display text-xl text-center mb-4 text-[#00e676]">WICKET</h3>
+                    
+                    <div class="space-y-3">
+                        <div>
+                            <label class="text-xs text-gray-400">Dismissed Batsman</label>
+                            <select v-model="wicketForm.outPlayer" class="w-full bg-black/20 border border-white/10 rounded p-2 mt-1">
+                                <option :value="match.liveData.striker.id">{{ match.liveData.striker.name }}*</option>
+                                <option :value="match.liveData.nonStriker.id">{{ match.liveData.nonStriker.name }}</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="text-xs text-gray-400">Dismissal Type</label>
+                            <select v-model="wicketForm.type" class="w-full bg-black/20 border border-white/10 rounded p-2 mt-1">
+                                <option value="Bowled">Bowled</option>
+                                <option value="Caught">Caught</option>
+                                <option value="LBW">LBW</option>
+                                <option value="Run Out">Run Out</option>
+                                <option value="Stumped">Stumped</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="text-xs text-gray-400">Next Batsman</label>
+                            <select v-model="wicketForm.nextPlayer" class="w-full bg-black/20 border border-white/10 rounded p-2 mt-1">
+                                <option v-for="p in availableBatsmen" :value="p.id">{{ p.name }}</option>
+                            </select>
+                        </div>
+
+                        <button @click="processWicket" class="w-full bg-red-500 text-white py-3 rounded-lg font-bold mt-4">CONFIRM WICKET</button>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <!-- Toast -->
+        <div v-if="toast.show" class="fixed bottom-20 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded-lg shadow-lg text-sm z-[9999]"
+             :class="toast.type === 'error' ? 'bg-red-500' : 'bg-[#00e676] text-black'">
+            {{ toast.message }}
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, reactive, computed, onMounted, watch } = Vue;
+
+        createApp({
+            setup() {
+                // State
+                const view = ref('auth');
+                const authTab = ref('login');
+                const login = reactive({ email: '', password: '' });
+                const signup = reactive({ name: '', email: '', password: '' });
+                const user = ref(JSON.parse(localStorage.getItem('user') || '{}'));
+                const token = ref(localStorage.getItem('token'));
+                const joinCode = ref('');
+                const isCreator = ref(false);
+                const showWicketModal = ref(false);
+                const toast = reactive({ show: false, message: '', type: 'success' });
+                
+                // Match State
+                const newMatch = reactive({
+                    name: 'Morning Match',
+                    overs: 20,
+                    teamA: { name: 'Team A', players: Array(4).fill('') },
+                    teamB: { name: 'Team B', players: Array(4).fill('') }
+                });
+                
+                const match = reactive({
+                    code: '',
+                    name: '',
+                    teamA: { name: '', players: [] },
+                    teamB: { name: '', players: [] },
+                    totalOvers: 0,
+                    liveData: {
+                        runs: 0, wickets: 0, overs: 0.0, 
+                        thisOver: [], target: null, runRate: 0.0,
+                        striker: null, nonStriker: null, bowler: null
+                    },
+                    ended: false,
+                    resultText: ''
+                });
+
+                const wicketForm = reactive({ outPlayer: '', type: 'Bowled', nextPlayer: '' });
+                const celebration = reactive({ show: false, text: '', class: '' });
+
+                // Computed
+                const availableBatsmen = computed(() => {
+                    if (!match.teamA.players) return [];
+                    const currentIds = [match.liveData.striker?.id, match.liveData.nonStriker?.id];
+                    return match.teamA.players.filter(p => !currentIds.includes(p.id));
+                });
+
+                const currentInningsData = computed(() => {
+                    // Simple meta data display helper
+                    return {
+                        battingTeamName: match.teamA.name // Simplified for 1st innings
+                    }
+                });
+
+                // Methods
+                const showToast = (message, type = 'success') => {
+                    toast.message = message;
+                    toast.type = type;
+                    toast.show = true;
+                    setTimeout(() => toast.show = false, 3000);
+                };
+
+                const celebrate = (text, cls, duration = 1000) => {
+                    celebration.text = text;
+                    celebration.class = cls;
+                    celebration.show = true;
+                    setTimeout(() => celebration.show = false, duration);
+                };
+
+                const api = async (url, method = 'GET', body = null) => {
+                    const headers = { 'Content-Type': 'application/json' };
+                    if (token.value) headers['Authorization'] = `Bearer ${token.value}`;
+                    
+                    const res = await fetch(`/api${url}`, {
+                        method,
+                        headers,
+                        body: body ? JSON.stringify(body) : null
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || 'Error');
+                    return data;
+                };
+
+                // Auth
+                const handleLogin = async () => {
+                    try {
+                        const res = await api('/auth/login', 'POST', login);
+                        token.value = res.token;
+                        user.value = res.user;
+                        localStorage.setItem('token', res.token);
+                        localStorage.setItem('user', JSON.stringify(res.user));
+                        view.value = 'home';
+                        initSocket();
+                        showToast('Welcome back!');
+                    } catch (e) {
+                        showToast(e.message, 'error');
+                    }
+                };
+
+                const handleSignup = async () => {
+                    try {
+                        await api('/auth/signup', 'POST', signup);
+                        showToast('Account created! Please login.');
+                        authTab.value = 'login';
+                    } catch (e) {
+                        showToast(e.message, 'error');
+                    }
+                };
+
+                const logout = () => {
+                    localStorage.clear();
+                    location.reload();
+                };
+
+                // Match Logic
+                const addPlayer = (team) => {
+                    if (newMatch[team].players.length < 11) {
+                        newMatch[team].players.push('');
+                    } else {
+                        showToast('Maximum 11 players allowed', 'error');
+                    }
+                };
+
+                const createMatch = async () => {
+                    try {
+                        const playersA = newMatch.teamA.players.filter(p => p.trim());
+                        const playersB = newMatch.teamB.players.filter(p => p.trim());
+                        
+                        if (playersA.length < 4 || playersB.length < 4) throw new Error('Min 4 players per team');
+
+                        const res = await api('/matches', 'POST', {
+                            name: newMatch.name,
+                            totalOvers: newMatch.overs,
+                            teamA: { name: newMatch.teamA.name, players: playersA },
+                            teamB: { name: newMatch.teamB.name, players: playersB }
+                        });
+                        
+                        match.code = res.match.code;
+                        isCreator.value = true;
+                        view.value = 'code';
+                    } catch (e) {
+                        showToast(e.message, 'error');
+                    }
+                };
+
+                const startScoring = () => {
+                    // Initialize local match state for UI reactivity
+                    Object.assign(match, {
+                        name: newMatch.name,
+                        teamA: { name: newMatch.teamA.name, players: newMatch.teamA.players.filter(p=>p).map((n, i) => ({id: 'a'+i, name: n})) },
+                        teamB: { name: newMatch.teamB.name, players: newMatch.teamB.players.filter(p=>p).map((n, i) => ({id: 'b'+i, name: n})) },
+                        totalOvers: newMatch.overs,
+                        ended: false
+                    });
+                    
+                    // Initialize game state in frontend
+                    match.liveData.striker = { ...match.teamA.players[0], runs: 0, balls: 0, fours: 0, sixes: 0 };
+                    match.liveData.nonStriker = { ...match.teamA.players[1], runs: 0, balls: 0, fours: 0, sixes: 0 };
+                    match.liveData.bowler = { ...match.teamB.players[0], overs: 0, balls: 0, runs: 0, wickets: 0, econ: 0 };
+                    
+                    socket.emit('init_game', { code: match.code, match });
+                    view.value = 'scoreboard';
+                };
+
+                const joinMatch = async () => {
+                    try {
+                        const res = await api(`/matches/${joinCode.value.toUpperCase()}`);
+                        isCreator.value = res.isCreator;
+                        // Load full match state
+                        Object.assign(match, res.match);
+                        // If liveData isn't populated (viewer joining), wait for socket or set defaults
+                        if(!match.liveData.striker && match.teamA.players) {
+                           // Defaults if server hasn't pushed state yet
+                           match.liveData.striker = match.teamA.players[0];
+                           match.liveData.nonStriker = match.teamA.players[1];
+                           match.liveData.bowler = match.teamB.players[0];
+                        }
+                        view.value = 'scoreboard';
+                    } catch (e) {
+                        showToast(e.message, 'error');
+                    }
+                };
+
+                const exitMatch = () => {
+                    socket.emit('leave', match.code);
+                    view.value = 'home';
+                };
+
+                // Scoring
+                const addScore = (type, value) => {
+                    socket.emit('score_action', { 
+                        code: match.code, 
+                        type, , 
+                        value,
+                        timestamp: Date.now() 
+                    });
+                };
+
+                const processWicket = () => {
+                    socket.emit('score_action', {
+                        code: match.code,
+                        type: 'wicket',
+                        outPlayer: wicketForm.outPlayer,
+                        nextPlayer: wicketForm.nextPlayer,
+                        dismissal: wicketForm.type
+                    });
+                    showWicketModal.value = false;
+                };
+
+                // Socket
+                let socket;
+                const initSocket = () => {
+                    socket = io({ auth: { token: token.value } });
+                    
+                    socket.on('connect', () => console.log('Socket Connected'));
+                    
+                    socket.on('state_update', (data) => {
+                        Object.assign(match, data);
+                        if (data.ended) {
+                            view.value = 'scoreboard'; // Ensure we are on scoreboard to see result
+                        }
+                    });
+
+                    socket.on('celebration', (type) => {
+                        if (type === '4') celebrate('FOUR!', 'text-yellow-400');
+                        if (type === '6') celebrate('SIX!', 'text-purple-400');
+                        if (type === 'W') celebrate('OUT!', 'text-red-500');
+                    });
+                };
+
+                onMounted(() => {
+                    if (token.value) {
+                        view.value = 'home';
+                        initSocket();
+                    }
+                });
+
+                return {
+                    view, authTab, login, signup, user, handleLogin, handleSignup, logout,
+                    newMatch, addPlayer, createMatch, joinCode, joinMatch,
+                    match, isCreator, currentInningsData, availableBatsmen,
+                    addScore, processWicket, wicketForm, showWicketModal, exitMatch,
+                    toast, celebration
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
